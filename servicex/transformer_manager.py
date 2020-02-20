@@ -111,31 +111,61 @@ class TransformerManager:
             env=env,
             args=python_args
         )
-        # Create and Configure a spec section
-        template = client.V1PodTemplateSpec(
-            metadata=client.V1ObjectMeta(labels={"app": "transformer-" + request_id}),
-            spec=client.V1PodSpec(
-                restart_policy="Never",
-                containers=[container],
-                volumes=volumes))
-        # Create the specification of deployment
-        spec = client.V1JobSpec(
-            template=template,
-            parallelism=workers,
-            backoff_limit=4)
-        # Instantiate the job object
-        job = client.V1Job(
-            api_version="batch/v1",
-            kind="Job",
-            metadata=client.V1ObjectMeta(name="transformer-" + request_id),
-            spec=spec)
 
-        return job
+        selector = client.V1LabelSelector(match_labels={'app': "transformer-" + request_id})
+
+        template = client.V1PodTemplateSpec(
+            metadata=client.V1ObjectMeta(labels={'app': "transformer-" + request_id}),
+            spec=client.V1PodSpec(
+                containers=[container],
+                volumes=volumes
+            )
+        )
+
+        deployment = client.V1Deployment(
+            api_version="apps/v1",
+            kind='Deployment',
+            metadata=client.V1ObjectMeta(name="transformer-" + request_id),
+            spec=client.V1DeploymentSpec(
+                selector=selector,
+                template=template
+            )
+        )
+
+        return deployment
+
+    def create_hpa_object(self, request_id):
+        target = client.V1CrossVersionObjectReference(
+            api_version="apps/v1",
+            kind='Deployment',
+            name="transformer-" + request_id
+        )
+
+        hpa = client.V1HorizontalPodAutoscaler(
+            api_version="autoscaling/v1",
+            kind='HorizontalPodAutoscaler',
+            metadata=client.V1ObjectMeta(name="transformer-" + request_id),
+            spec=client.V1HorizontalPodAutoscalerSpec(
+                max_replicas=400,
+                scale_target_ref=target,
+                target_cpu_utilization_percentage=1
+            )
+        )
+
+        return hpa
 
     def create_job(self, api_instance, job, namespace):
         # Create job
-        api_response = api_instance.create_namespaced_job(
+        # api_response = api_instance.create_namespaced_horizontal_pod_autoscaler(
+        api_response = api_instance.create_namespaced_deployment(
             body=job,
+            namespace=namespace)
+        print("Job created. status='%s'" % str(api_response.status))
+
+    def create_hpa(self, api_instance, hpa, namespace):
+        # Create job
+        api_response = api_instance.create_namespaced_horizontal_pod_autoscaler(
+            body=hpa,
             namespace=namespace)
         print("Job created. status='%s'" % str(api_response.status))
 
@@ -143,22 +173,29 @@ class TransformerManager:
                                 rabbitmq_uri, namespace, x509_secret, generated_code_cm,
                                 result_destination, result_format, kafka_broker=None,
                                 ):
-        batch_v1 = client.BatchV1Api()
+        dep_api_instance = client.AppsV1Api()
+        hpa_api_instance = client.AutoscalingV1Api()
         job = self.create_job_object(request_id, image, chunk_size, rabbitmq_uri, workers,
                                      result_destination, result_format,
                                      x509_secret, kafka_broker, generated_code_cm)
-        self.create_job(batch_v1, job, namespace)
+        self.create_job(dep_api_instance, job, namespace)
+        hpa = self.create_hpa_object(request_id)
+        self.create_hpa(hpa_api_instance, hpa, namespace)
 
     def shutdown_transformer_job(self, request_id, namespace):
-        batch_v1 = client.BatchV1Api()
+        # api_instance = client.AutoscalingV1Api()
+        api_instance = client.AppsV1Api()
 
         # Make sure when we delete the job, the pods go away too
         # https://github.com/kubernetes-client/python/issues/234
         body = client.V1DeleteOptions(propagation_policy='Background')
 
-        batch_v1.delete_namespaced_job(name="transformer-" + request_id,
-                                       body=body,
-                                       namespace=namespace)
+        # api_instance.delete_namespaced_horizontal_pod_autoscaler(
+        api_instance.delete_namespaced_deployment(
+            name="transformer-" + request_id,
+            body=body,
+            namespace=namespace
+        )
 
     def create_configmap_from_zip(self, zipfile, request_id, namespace):
         configmap_name = "{}-generated-source".format(request_id)
