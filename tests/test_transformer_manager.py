@@ -67,11 +67,11 @@ class TestTransformerManager(ResourceTestBase):
             mock_kubernetes_inside.assert_not_called()
             mock_kubernetes_outside.assert_not_called()
 
-    def test_launch_transformer_jobs(self, mocker, mock_rabbit_adaptor):
+    def test_launch_transformer_deployments(self, mocker, mock_rabbit_adaptor):
         import kubernetes
 
         mocker.patch.object(kubernetes.config, 'load_kube_config')
-        mock_kubernetes = mocker.patch.object(kubernetes.client, 'BatchV1Api')
+        mock_kubernetes = mocker.patch.object(kubernetes.client, 'AppsV1Api')
 
         transformer = TransformerManager('external-kubernetes')
         client = self._test_client(transformation_manager=transformer,
@@ -79,7 +79,7 @@ class TestTransformerManager(ResourceTestBase):
 
         with client.application.app_context():
             transformer.launch_transformer_jobs(
-                image='sslhep/servicex-transformer:pytest', request_id='1234', workers=17,
+                image='sslhep/servicex-transformer:develop', request_id='1234', workers=17,
                 chunk_size=5000, rabbitmq_uri='ampq://test.com', namespace='my-ns',
                 result_destination='kafka', result_format='arrow', x509_secret='x509',
                 generated_code_cm=None)
@@ -87,7 +87,7 @@ class TestTransformerManager(ResourceTestBase):
             assert called_job.spec.parallelism == 17
             assert len(called_job.spec.template.spec.containers) == 1
             container = called_job.spec.template.spec.containers[0]
-            assert container.image == 'sslhep/servicex-transformer:pytest'
+            assert container.image == 'sslhep/servicex-transformer:develop'
             assert container.image_pull_policy == 'Always'
             args = container.args
 

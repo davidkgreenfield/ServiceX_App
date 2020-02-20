@@ -42,9 +42,8 @@ class TransformerManager:
         else:
             raise ValueError('Manager mode '+manager_mode+' not valid')
 
-    def create_job_object(self, request_id, image, chunk_size, rabbitmq_uri, workers,
-                          result_destination, result_format, x509_secret, kafka_broker,
-                          generated_code_cm):
+    def create_job_object(self, request_id, image, chunk_size, rabbitmq_uri, result_destination,
+                          result_format, x509_secret, kafka_broker, generated_code_cm):
         volume_mounts = [
             client.V1VolumeMount(
                 name='x509-secret',
@@ -134,7 +133,7 @@ class TransformerManager:
 
         return deployment
 
-    def create_hpa_object(self, request_id):
+    def create_hpa_object(self, request_id, workers):
         target = client.V1CrossVersionObjectReference(
             api_version="apps/v1",
             kind='Deployment',
@@ -146,7 +145,7 @@ class TransformerManager:
             kind='HorizontalPodAutoscaler',
             metadata=client.V1ObjectMeta(name="transformer-" + request_id),
             spec=client.V1HorizontalPodAutoscalerSpec(
-                max_replicas=400,
+                max_replicas=workers,
                 scale_target_ref=target,
                 target_cpu_utilization_percentage=1
             )
@@ -175,11 +174,11 @@ class TransformerManager:
                                 ):
         dep_api_instance = client.AppsV1Api()
         hpa_api_instance = client.AutoscalingV1Api()
-        job = self.create_job_object(request_id, image, chunk_size, rabbitmq_uri, workers,
-                                     result_destination, result_format,
-                                     x509_secret, kafka_broker, generated_code_cm)
+        job = self.create_job_object(request_id, image, chunk_size, rabbitmq_uri,
+                                     result_destination, result_format, x509_secret, kafka_broker,
+                                     generated_code_cm)
         self.create_job(dep_api_instance, job, namespace)
-        hpa = self.create_hpa_object(request_id)
+        hpa = self.create_hpa_object(request_id, workers)
         self.create_hpa(hpa_api_instance, hpa, namespace)
 
     def shutdown_transformer_job(self, request_id, namespace):
