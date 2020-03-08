@@ -44,5 +44,5 @@ jobs:
         name: sslhep/servicex_app
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
-        tag: "${GITHUB_REF##*/}"
+        tags: "${GITHUB_REF##*/}"
 
